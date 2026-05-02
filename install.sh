@@ -17,8 +17,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # GitHub configuration for one-liner mode
-GITHUB_USER="JacobusXIII"
-GITHUB_REPO="omarchy-wireguard-vpn-toggle"
+GITHUB_USER="james-ridgway"
+GITHUB_REPO="omarchy-openvpn-vpn-toggle"
 GITHUB_BRANCH="main"
 
 # Runtime configuration
@@ -28,7 +28,6 @@ VPN_CONFIGS_PATH="${HOME}/.config/openvpn"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "/tmp")"
 REPO_SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
 TEMP_INSTALL_DIR=""
-PID_FILE="${SCRIPTS_DIR}/vpn.pid"
 PID_FILE="${SCRIPTS_DIR}/vpn.pid"
 
 # Error handling
@@ -87,7 +86,7 @@ need_download() {
 download_repository() {
   print_info "Downloading repository..."
   
-  TEMP_INSTALL_DIR="/tmp/omarchy-wireguard-vpn-toggle-$$"
+  TEMP_INSTALL_DIR="/tmp/omarchy-openvpn-vpn-toggle-$$"
   
   # Try git clone first
   if command -v git &>/dev/null; then
@@ -347,21 +346,21 @@ create_vpn_config() {
     if [[ -n "${first_config}" ]]; then
       local vpn_name
       vpn_name=$(basename "${first_config}" .ovpn)
-      cat > "${SCRIPTS_DIR}/vpn.conf" <<EOF
-VPN_NAME="${vpn_name}"
-VPN_CONFIG_PATH="${first_config}"
-VPN_USER=""
-VPN_PASSWORD=""
-EOF
+      {
+        printf 'VPN_NAME=%q\n' "${vpn_name}"
+        printf 'VPN_CONFIG_PATH=%q\n' "${first_config}"
+        printf 'VPN_USER=%q\n' ""
+        printf 'VPN_PASSWORD=%q\n' ""
+      } > "${SCRIPTS_DIR}/vpn.conf"
       print_success "Created vpn.conf with default: ${vpn_name}"
       print_warning "You'll need to configure credentials via the selection menu (right-click)"
     else
-      cat > "${SCRIPTS_DIR}/vpn.conf" <<EOF
-VPN_NAME=""
-VPN_CONFIG_PATH=""
-VPN_USER=""
-VPN_PASSWORD=""
-EOF
+      {
+        printf 'VPN_NAME=%q\n' ""
+        printf 'VPN_CONFIG_PATH=%q\n' ""
+        printf 'VPN_USER=%q\n' ""
+        printf 'VPN_PASSWORD=%q\n' ""
+      } > "${SCRIPTS_DIR}/vpn.conf"
       print_warning "Created empty vpn.conf. Configure via the selection menu (right-click)"
     fi
   else

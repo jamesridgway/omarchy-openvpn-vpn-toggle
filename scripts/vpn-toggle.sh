@@ -6,6 +6,7 @@ CONFIG_FILE="${SCRIPT_DIR}/vpn.conf"
 PID_FILE="${SCRIPT_DIR}/vpn.pid"
 LOG_FILE="${SCRIPT_DIR}/vpn.log"
 CONNECT_TIMEOUT_SECONDS="${VPN_CONNECT_TIMEOUT_SECONDS:-30}"
+OVPN_HELPER="/usr/local/bin/omarchy-ovpn-helper"
 
 read_pid() {
   [[ -f "${PID_FILE}" ]] || return 1
@@ -43,9 +44,8 @@ require_config() {
 }
 
 if is_vpn_running; then
-  pid=$(read_pid)
   echo "Stopping VPN..."
-  sudo kill "${pid}"
+  sudo "${OVPN_HELPER}" stop
   rm -f "${PID_FILE}"
   rm -f "${SCRIPT_DIR}"/.vpn_auth_*
   echo "VPN disconnected"
@@ -59,52 +59,35 @@ else
     exit 1
   fi
 
-  AUTH_OPTS=()
   auth_file=""
   if [[ -n "${VPN_USER}" ]] && [[ -n "${VPN_PASSWORD}" ]]; then
     auth_file="${SCRIPT_DIR}/.vpn_auth_${VPN_NAME}"
     ( umask 077; printf '%s\n%s\n' "${VPN_USER}" "${VPN_PASSWORD}" > "${auth_file}" )
-    AUTH_OPTS+=("--auth-user-pass" "${auth_file}")
   else
-    echo "No credentials found in vpn.conf."
+    echo "Error: No credentials found in vpn.conf."
+    echo "Run vpn-select.sh (right-click) to save credentials first."
+    exit 1
   fi
 
   echo "Starting VPN..."
 
   temp_config="${SCRIPT_DIR}/.vpn_config_sanitized_${VPN_NAME}.ovpn"
 
-  if [[ ${#AUTH_OPTS[@]} -gt 0 ]]; then
-    sed -E \
-      '/^[[:space:]]*(up|down)[[:space:]]+\/etc\/openvpn\/update-resolv-conf/d; /^[[:space:]]*auth-user-pass([[:space:]]+.*)?$/d' \
-      "${config_file}" > "${temp_config}"
-  else
-    sed -E \
-      '/^[[:space:]]*(up|down)[[:space:]]+\/etc\/openvpn\/update-resolv-conf/d' \
-      "${config_file}" > "${temp_config}"
-
-    if grep -Eq '^[[:space:]]*auth-user-pass[[:space:]]*$' "${config_file}"; then
-      echo "Error: This profile requires username/password input."
-      echo "Run vpn-select.sh (right-click) and save credentials first."
-      rm -f "${temp_config}"
-      exit 1
-    fi
-  fi
+  # Sanitize the user's .ovpn: drop the resolv-conf hooks (which often
+  # point at scripts we don't ship) and any 'auth-user-pass' directive
+  # in the config (we always supply credentials via the auth file).
+  sed -E \
+    '/^[[:space:]]*(up|down)[[:space:]]+\/etc\/openvpn\/update-resolv-conf/d; /^[[:space:]]*auth-user-pass([[:space:]]+.*)?$/d' \
+    "${config_file}" > "${temp_config}"
 
   rm -f "${LOG_FILE}" 2>/dev/null || true
-  if ! : > "${LOG_FILE}"; then
+  if ! ( umask 077; : > "${LOG_FILE}" ); then
     echo "Error: Cannot write VPN log file at ${LOG_FILE}"
     rm -f "${temp_config}"
     exit 1
   fi
-  chmod 600 "${LOG_FILE}"
 
-  if ! sudo openvpn --config "${temp_config}" \
-      "${AUTH_OPTS[@]}" \
-      --auth-retry nointeract \
-      --script-security 1 \
-      --daemon \
-      --writepid "${PID_FILE}" \
-      --log "${LOG_FILE}"; then
+  if ! sudo "${OVPN_HELPER}" start; then
     echo "Error: Failed to start OpenVPN process."
     echo "Check permissions or config validity."
     rm -f "${temp_config}"
@@ -155,10 +138,7 @@ else
   fi
 
   if [[ -f "${PID_FILE}" ]]; then
-    pid=$(read_pid || true)
-    if [[ -n "${pid:-}" ]]; then
-      sudo kill "${pid}" 2>/dev/null || true
-    fi
+    sudo "${OVPN_HELPER}" stop 2>/dev/null || true
     rm -f "${PID_FILE}"
   fi
   rm -f "${temp_config}"

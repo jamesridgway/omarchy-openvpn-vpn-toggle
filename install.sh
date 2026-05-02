@@ -208,6 +208,16 @@ uninstall() {
     fi
   fi
 
+  # 5. Remove privileged helper
+  if [[ -f "/usr/local/bin/omarchy-ovpn-helper" ]]; then
+    print_info "Removing privileged helper..."
+    if sudo rm "/usr/local/bin/omarchy-ovpn-helper"; then
+      print_success "Removed /usr/local/bin/omarchy-ovpn-helper"
+    else
+      print_error "Failed to remove /usr/local/bin/omarchy-ovpn-helper"
+    fi
+  fi
+
   echo ""
   print_success "Uninstallation complete!"
   restart_waybar
@@ -243,6 +253,7 @@ main() {
   create_waybar_directory
   verify_repo_scripts
   install_scripts
+  install_ovpn_helper
   create_vpn_config
   update_waybar_config
   update_waybar_styles
@@ -343,7 +354,7 @@ install_scripts() {
   print_info "Installing VPN toggle scripts..."
 
   local -a scripts=("vpn-status.sh" "vpn-toggle.sh" "vpn-select.sh")
-  
+
   for script in "${scripts[@]}"; do
     if [[ -f "${REPO_SCRIPTS_DIR}/${script}" ]]; then
       cp "${REPO_SCRIPTS_DIR}/${script}" "${OVPN_SCRIPTS_DIR}/"
@@ -354,6 +365,25 @@ install_scripts() {
       exit 1
     fi
   done
+}
+
+install_ovpn_helper() {
+  print_info "Installing privileged OpenVPN helper to /usr/local/bin..."
+
+  local helper_src="${REPO_SCRIPTS_DIR}/ovpn-helper.sh"
+  local helper_dst="/usr/local/bin/omarchy-ovpn-helper"
+
+  if [[ ! -f "${helper_src}" ]]; then
+    print_error "Helper script not found: ${helper_src}"
+    exit 1
+  fi
+
+  if sudo install -o root -g root -m 0755 "${helper_src}" "${helper_dst}"; then
+    print_success "Installed ${helper_dst}"
+  else
+    print_error "Failed to install ${helper_dst}"
+    exit 1
+  fi
 }
 
 create_vpn_config() {
@@ -508,16 +538,18 @@ configure_sudoers() {
   echo ""
   print_warning "Sudoers Configuration Required"
   echo ""
-  print_info "To enable passwordless VPN toggling, openvpn and kill commands need to be added to sudoers."
-  print_warning "This allows running 'openvpn' and 'kill' commands without entering your password."
+  print_info "To enable passwordless VPN toggling, the omarchy-ovpn-helper binary"
+  print_info "needs a NOPASSWD entry in sudoers. The helper accepts only 'start'"
+  print_info "and 'stop' verbs and validates everything it runs, so this rule is"
+  print_info "narrower than granting NOPASSWD on /usr/bin/openvpn directly."
   echo ""
-  
+
   read -p "Would you like to configure sudoers now? (y/N) " -n 1 -r </dev/tty
   echo
 
   if [[ ${REPLY} =~ ^[Yy]$ ]]; then
     print_info "Adding sudoers rule..."
-    
+
     local user_group
     if groups | grep -q wheel; then
       user_group="wheel"
@@ -529,12 +561,12 @@ configure_sudoers() {
       print_warning "Defaulting to 'wheel' group. You may need to adjust this."
     fi
 
-    local sudoers_line="%${user_group} ALL=(ALL) NOPASSWD: /usr/bin/openvpn, /usr/bin/kill"
+    local sudoers_line="%${user_group} ALL=(ALL) NOPASSWD: /usr/local/bin/omarchy-ovpn-helper"
     local temp_sudoers
     temp_sudoers=$(mktemp)
-    
+
     echo "${sudoers_line}" > "${temp_sudoers}"
-    
+
     if sudo visudo -c -f "${temp_sudoers}" &>/dev/null; then
       echo "${sudoers_line}" | sudo tee /etc/sudoers.d/openvpn-vpn-toggle > /dev/null
       sudo chmod 440 /etc/sudoers.d/openvpn-vpn-toggle
@@ -544,12 +576,12 @@ configure_sudoers() {
       rm "${temp_sudoers}"
       exit 1
     fi
-    
+
     rm "${temp_sudoers}"
   else
     print_warning "Skipping sudoers configuration."
     print_info "You'll need to manually add this line to sudoers (using 'sudo visudo'):"
-    echo "  %wheel ALL=(ALL) NOPASSWD: /usr/bin/openvpn, /usr/bin/kill"
+    echo "  %wheel ALL=(ALL) NOPASSWD: /usr/local/bin/omarchy-ovpn-helper"
     echo ""
     print_warning "Without this, you'll be prompted for your password when toggling VPN."
   fi

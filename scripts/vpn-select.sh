@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${SCRIPT_DIR}/vpn.pid"
 CREDS_DIR="${SCRIPT_DIR}/.creds"
 TOGGLE_SCRIPT="${SCRIPT_DIR}/vpn-toggle.sh"
+OVPN_HELPER="/usr/local/bin/omarchy-ovpn-helper"
 
 read_pid() {
   [[ -f "${PID_FILE}" ]] || return 1
@@ -120,9 +121,8 @@ select vpn_config in "${configs[@]}"; do
     # If a VPN is connected, disconnect and reconnect via the toggle script
     # so connection logic lives in one place.
     if is_vpn_running; then
-      current_pid=$(read_pid)
       echo "Disconnecting current VPN..."
-      sudo kill "${current_pid}" 2>/dev/null || true
+      sudo "${OVPN_HELPER}" stop 2>/dev/null || true
       rm -f "${PID_FILE}"
       rm -f "${SCRIPT_DIR}"/.vpn_auth_*
 

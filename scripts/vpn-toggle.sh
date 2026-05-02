@@ -8,6 +8,15 @@ LOG_FILE="${SCRIPT_DIR}/vpn.log"
 CONNECT_TIMEOUT_SECONDS="${VPN_CONNECT_TIMEOUT_SECONDS:-30}"
 OVPN_HELPER="/usr/local/bin/omarchy-ovpn-helper"
 
+notify() {
+  command -v notify-send > /dev/null 2>&1 || return 0
+  local urgency="$1" title="$2" body="${3-}"
+  notify-send -u "${urgency}" \
+    -h string:x-canonical-private-synchronous:omarchy-ovpn \
+    -i network-vpn \
+    "${title}" "${body}" 2> /dev/null || true
+}
+
 read_pid() {
   [[ -f "${PID_FILE}" ]] || return 1
   local pid
@@ -44,11 +53,17 @@ require_config() {
 }
 
 if is_vpn_running; then
+  # Best-effort load so the toast can name the profile; ignore failures.
+  # shellcheck disable=SC1090
+  [[ -f "${CONFIG_FILE}" ]] && source "${CONFIG_FILE}" 2> /dev/null || true
+  vpn_label="${VPN_NAME:-VPN}"
   echo "Stopping VPN..."
+  notify low "󰦞    Disconnecting VPN" "${vpn_label}"
   sudo "${OVPN_HELPER}" stop
   rm -f "${PID_FILE}"
   rm -f "${SCRIPT_DIR}"/.vpn_auth_*
   echo "VPN disconnected"
+  notify normal "󰦞    VPN disconnected" "${vpn_label}"
 else
   require_config
 
@@ -70,6 +85,7 @@ else
   fi
 
   echo "Starting VPN..."
+  notify low "󰦝    Connecting VPN" "${VPN_NAME}"
 
   temp_config="${SCRIPT_DIR}/.vpn_config_sanitized_${VPN_NAME}.ovpn"
 
@@ -90,6 +106,7 @@ else
   if ! sudo "${OVPN_HELPER}" start; then
     echo "Error: Failed to start OpenVPN process."
     echo "Check permissions or config validity."
+    notify critical "󰦞    VPN failed to start" "${VPN_NAME}"
     rm -f "${temp_config}"
     exit 1
   fi
@@ -98,6 +115,7 @@ else
   if ! is_vpn_running; then
     echo "Failed to start VPN process."
     [[ -f "${LOG_FILE}" ]] && tail -n 10 "${LOG_FILE}"
+    notify critical "󰦞    VPN failed to start" "${VPN_NAME}"
     rm -f "${temp_config}"
     rm -f "${PID_FILE}"
     exit 1
@@ -107,6 +125,7 @@ else
   while [[ ${count} -lt ${CONNECT_TIMEOUT_SECONDS} ]]; do
     if grep -q "Initialization Sequence Completed" "${LOG_FILE}"; then
       echo "VPN connection successful"
+      notify normal "󰦝    VPN connected" "${VPN_NAME}"
       tail -n 1 "${LOG_FILE}"
       rm -f "${temp_config}"
       exit 0
@@ -127,11 +146,13 @@ else
   if is_vpn_running; then
     echo "VPN process is running and still initializing."
     echo "Check ${LOG_FILE} for progress."
+    notify low "󰦝    VPN still connecting" "${VPN_NAME}"
     rm -f "${temp_config}"
     exit 0
   fi
 
   echo "Failed to connect to VPN."
+  notify critical "󰦞    VPN connection failed" "${VPN_NAME}"
   echo "Check ${LOG_FILE} for details:"
   if [[ -f "${LOG_FILE}" ]]; then
     tail -n 10 "${LOG_FILE}"

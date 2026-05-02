@@ -10,6 +10,7 @@ Based on the guide from [Omarchy Discussion #1366](https://github.com/basecamp/o
 
 - 🔒 **One-click VPN toggle** - Left-click to connect/disconnect
 - 🎨 **Visual status indicator** - Integrates with Omarchy's icon theming
+- 🔔 **Desktop notifications** - mako toasts on connect, disconnect, and failures
 - 🔄 **Profile switching** - Right-click menu to switch between VPN configs
 - ⚡ **Passwordless operation** - Optional sudoers configuration
 - 🛡️ **The Omarchy way** - All scripts follow Omarchy bash practices with proper error handling

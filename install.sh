@@ -22,13 +22,16 @@ GITHUB_REPO="omarchy-openvpn-vpn-toggle"
 GITHUB_BRANCH="main"
 
 # Runtime configuration
+WAYBAR_OVPN_SELECTOR="custom-ovpn"
+WAYBAR_OVPN_MODULE_NAME="custom/ovpn"
 WAYBAR_CONFIG_DIR="${HOME}/.config/waybar"
 SCRIPTS_DIR="${WAYBAR_CONFIG_DIR}/scripts"
+OVPN_SCRIPTS_DIR="${SCRIPTS_DIR}/ovpn-toggle"
 VPN_CONFIGS_PATH="${HOME}/.config/openvpn"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "/tmp")"
 REPO_SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
 TEMP_INSTALL_DIR=""
-PID_FILE="${SCRIPTS_DIR}/vpn.pid"
+PID_FILE="${OVPN_SCRIPTS_DIR}/vpn.pid"
 
 # Error handling
 catch_errors() {
@@ -134,8 +137,8 @@ uninstall() {
   print_info "Removing scripts..."
   local -a scripts=("vpn-status.sh" "vpn-toggle.sh" "vpn-select.sh" "vpn.conf")
   for script in "${scripts[@]}"; do
-    if [[ -f "${SCRIPTS_DIR}/${script}" ]]; then
-      rm "${SCRIPTS_DIR}/${script}"
+    if [[ -f "${OVPN_SCRIPTS_DIR}/${script}" ]]; then
+      rm "${OVPN_SCRIPTS_DIR}/${script}"
       print_success "Removed ${script}"
     fi
   done
@@ -152,18 +155,22 @@ uninstall() {
     cp "${config_file}" "${backup_file}"
     print_success "Backed up config to ${backup_file}"
 
-    # Remove custom/vpn from modules-right
-    if jq -e '.["modules-right"] | index("custom/vpn")' "${config_file}" &>/dev/null; then
-      jq '.["modules-right"] -= ["custom/vpn"]' "${config_file}" > "${config_file}.tmp"
+    # Remove the custom module from modules-right
+    if jq -e --arg m "${WAYBAR_OVPN_MODULE_NAME}" \
+        '.["modules-right"] | index($m)' "${config_file}" &>/dev/null; then
+      jq --arg m "${WAYBAR_OVPN_MODULE_NAME}" \
+        '.["modules-right"] -= [$m]' "${config_file}" > "${config_file}.tmp"
       mv "${config_file}.tmp" "${config_file}"
-      print_success "Removed custom/vpn from modules-right"
+      print_success "Removed ${WAYBAR_OVPN_MODULE_NAME} from modules-right"
     fi
 
-    # Remove custom/vpn definition
-    if jq -e '.["custom/vpn"]' "${config_file}" &>/dev/null; then
-      jq 'del(.["custom/vpn"])' "${config_file}" > "${config_file}.tmp"
+    # Remove the custom module definition
+    if jq -e --arg m "${WAYBAR_OVPN_MODULE_NAME}" \
+        '.[$m]' "${config_file}" &>/dev/null; then
+      jq --arg m "${WAYBAR_OVPN_MODULE_NAME}" \
+        'del(.[$m])' "${config_file}" > "${config_file}.tmp"
       mv "${config_file}.tmp" "${config_file}"
-      print_success "Removed custom/vpn module definition"
+      print_success "Removed ${WAYBAR_OVPN_MODULE_NAME} module definition"
     fi
   else
     print_warning "Waybar config file not found"
@@ -177,13 +184,14 @@ uninstall() {
     cp "${style_file}" "${backup_file}"
     print_success "Backed up style to ${backup_file}"
 
-    if grep -q "#custom-vpn" "${style_file}"; then
-      sed -i 's/#custom-omarchy,\n#custom-vpn/#custom-omarchy/g' "${style_file}"
-      # Fallback cleanup if the exact match failed (e.g. user modified it)
-      if grep -q "#custom-vpn" "${style_file}"; then
-         sed -i '/#custom-vpn/d' "${style_file}"
+    if grep -q "#${WAYBAR_OVPN_SELECTOR}" "${style_file}"; then
+      # Precise two-line removal of the selector pair we wrote at install time.
+      sed -i -e "/#custom-omarchy,/{N;s/#custom-omarchy,\n#${WAYBAR_OVPN_SELECTOR}/#custom-omarchy/}" "${style_file}"
+      # Fallback cleanup if the exact match failed (e.g. user modified it).
+      if grep -q "#${WAYBAR_OVPN_SELECTOR}" "${style_file}"; then
+         sed -i "/#${WAYBAR_OVPN_SELECTOR}/d" "${style_file}"
       fi
-      print_success "Removed #custom-vpn from style.css"
+      print_success "Removed #${WAYBAR_OVPN_SELECTOR} from style.css"
     fi
   else
     print_warning "style.css not found"
@@ -311,6 +319,12 @@ create_waybar_directory() {
     mkdir -p "${SCRIPTS_DIR}"
     print_success "Created ${SCRIPTS_DIR}"
   fi
+
+  if [[ ! -d "${OVPN_SCRIPTS_DIR}" ]]; then
+    print_info "Creating Waybar VPN scripts directory..."
+    mkdir -p "${OVPN_SCRIPTS_DIR}"
+    print_success "Created ${OVPN_SCRIPTS_DIR}"
+  fi
 }
 
 verify_repo_scripts() {
@@ -328,8 +342,8 @@ install_scripts() {
   
   for script in "${scripts[@]}"; do
     if [[ -f "${REPO_SCRIPTS_DIR}/${script}" ]]; then
-      cp "${REPO_SCRIPTS_DIR}/${script}" "${SCRIPTS_DIR}/"
-      chmod +x "${SCRIPTS_DIR}/${script}"
+      cp "${REPO_SCRIPTS_DIR}/${script}" "${OVPN_SCRIPTS_DIR}/"
+      chmod +x "${OVPN_SCRIPTS_DIR}/${script}"
       print_success "Installed ${script}"
     else
       print_error "Script not found: ${REPO_SCRIPTS_DIR}/${script}"
@@ -339,10 +353,10 @@ install_scripts() {
 }
 
 create_vpn_config() {
-  if [[ ! -f "${SCRIPTS_DIR}/vpn.conf" ]]; then
+  if [[ ! -f "${OVPN_SCRIPTS_DIR}/vpn.conf" ]]; then
     local first_config
     first_config=$(find "${VPN_CONFIGS_PATH}" -maxdepth 1 -name "*.ovpn" 2>/dev/null | head -n 1)
-    
+
     if [[ -n "${first_config}" ]]; then
       local vpn_name
       vpn_name=$(basename "${first_config}" .ovpn)
@@ -351,7 +365,7 @@ create_vpn_config() {
         printf 'VPN_CONFIG_PATH=%q\n' "${first_config}"
         printf 'VPN_USER=%q\n' ""
         printf 'VPN_PASSWORD=%q\n' ""
-      } > "${SCRIPTS_DIR}/vpn.conf"
+      } > "${OVPN_SCRIPTS_DIR}/vpn.conf"
       print_success "Created vpn.conf with default: ${vpn_name}"
       print_warning "You'll need to configure credentials via the selection menu (right-click)"
     else
@@ -360,7 +374,7 @@ create_vpn_config() {
         printf 'VPN_CONFIG_PATH=%q\n' ""
         printf 'VPN_USER=%q\n' ""
         printf 'VPN_PASSWORD=%q\n' ""
-      } > "${SCRIPTS_DIR}/vpn.conf"
+      } > "${OVPN_SCRIPTS_DIR}/vpn.conf"
       print_warning "Created empty vpn.conf. Configure via the selection menu (right-click)"
     fi
   else
@@ -385,38 +399,40 @@ update_waybar_config() {
   cp "${config_file}" "${backup_file}"
   print_success "Backed up existing config to ${backup_file}"
 
-  # Check if custom/vpn already exists
-  if jq -e '.["custom/vpn"]' "${config_file}" &>/dev/null; then
-    print_info "custom/vpn already present in Waybar config"
+  # Check if the configured module already exists
+  if jq -e --arg m "${WAYBAR_OVPN_MODULE_NAME}" '.[$m]' "${config_file}" &>/dev/null; then
+    print_info "${WAYBAR_OVPN_MODULE_NAME} already present in Waybar config"
     return 0
   fi
 
-  # Add custom/vpn to modules-right after network
+  # Add the configured module to modules-right after network
   if jq -e '.["modules-right"]' "${config_file}" &>/dev/null; then
-    # Find network and insert custom/vpn right after it, preserving order
-    jq '.["modules-right"] = (
-      .["modules-right"] | 
-      to_entries | 
+    # Find network and insert the configured module right after it, preserving order
+    jq --arg m "${WAYBAR_OVPN_MODULE_NAME}" '.["modules-right"] = (
+      .["modules-right"] |
+      to_entries |
       map(
-        if .value == "network" then 
-          [., {"key": (.key + 0.5), "value": "custom/vpn"}]
-        else 
+        if .value == "network" then
+          [., {"key": (.key + 0.5), "value": $m}]
+        else
           .
         end
-      ) | 
-      flatten | 
-      sort_by(.key) | 
+      ) |
+      flatten |
+      sort_by(.key) |
       map(.value)
     )' "${config_file}" > "${config_file}.tmp"
     mv "${config_file}.tmp" "${config_file}"
-    print_success "Added custom/vpn to modules-right after network"
+    print_success "Added ${WAYBAR_OVPN_MODULE_NAME} to modules-right after network"
   else
     print_warning "Could not find modules-right in config"
   fi
 
-  # Add custom/vpn module definition
-  jq '. += {
-    "custom/vpn": {
+  # Add the configured module definition
+  jq \
+    --arg m "${WAYBAR_OVPN_MODULE_NAME}" \
+    --arg dir "${OVPN_SCRIPTS_DIR}" '. += {
+    ($m): {
       "format": "{icon}",
       "format-icons": {
         "default": "",
@@ -426,15 +442,15 @@ update_waybar_config() {
       },
       "interval": 3,
       "return-type": "json",
-      "exec": "$HOME/.config/waybar/scripts/vpn-status.sh",
-      "on-click": "$HOME/.config/waybar/scripts/vpn-toggle.sh",
-      "on-click-right": "omarchy-launch-floating-terminal-with-presentation $HOME/.config/waybar/scripts/vpn-select.sh",
+      "exec": ($dir + "/vpn-status.sh"),
+      "on-click": ($dir + "/vpn-toggle.sh"),
+      "on-click-right": ("omarchy-launch-floating-terminal-with-presentation " + $dir + "/vpn-select.sh"),
       "signal": 8
     }
   }' "${config_file}" > "${config_file}.tmp"
-  
+
   mv "${config_file}.tmp" "${config_file}"
-  print_success "Added custom/vpn module definition"
+  print_success "Added ${WAYBAR_OVPN_MODULE_NAME} module definition"
 }
 
 update_waybar_styles() {
@@ -447,12 +463,13 @@ update_waybar_styles() {
     cp "${style_file}" "${backup_file}"
     print_success "Backed up existing style to ${backup_file}"
     
-    # Add #custom-vpn alongside #custom-omarchy
-    if grep -q "#custom-vpn" "${style_file}"; then
-      print_info "#custom-vpn already present in style.css"
+    # Add the configured selector alongside #custom-omarchy
+    if grep -q "#${WAYBAR_OVPN_SELECTOR}" "${style_file}"; then
+      print_info "#${WAYBAR_OVPN_SELECTOR} already present in style.css"
     elif grep -q "#custom-omarchy" "${style_file}"; then
-      sed -i 's/#custom-omarchy/#custom-omarchy,\n#custom-vpn/g' "${style_file}"
-      print_success "Added #custom-vpn to style.css alongside #custom-omarchy"
+      local selector="#${WAYBAR_OVPN_SELECTOR}"
+      sed -i "s|#custom-omarchy|#custom-omarchy,\\n${selector}|g" "${style_file}"
+      print_success "Added ${selector} to style.css alongside #custom-omarchy"
     else
       print_warning "Could not find #custom-omarchy in style.css"
     fi

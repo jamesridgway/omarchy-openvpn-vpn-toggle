@@ -44,12 +44,12 @@ Install directly from GitHub with a single command:
 
 **Using curl:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/james-ridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jamesridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
 ```
 
 **Using wget:**
 ```bash
-wget -qO- https://raw.githubusercontent.com/james-ridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/jamesridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
 ```
 
 This will:
@@ -67,7 +67,7 @@ This will:
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/james-ridgway/omarchy-openvpn-vpn-toggle.git
+git clone https://github.com/jamesridgway/omarchy-openvpn-vpn-toggle.git
 cd omarchy-openvpn-vpn-toggle
 ```
 

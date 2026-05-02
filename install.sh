@@ -6,7 +6,7 @@ set -eEo pipefail
 # 
 # Can be used as:
 # 1. Local install: ./install.sh
-# 2. One-liner: curl -fsSL https://raw.githubusercontent.com/james-ridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
+# 2. One-liner: curl -fsSL https://raw.githubusercontent.com/jamesridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
 # 3. Uninstall: ./install.sh --uninstall
 
 # Colors for output
@@ -17,7 +17,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # GitHub configuration for one-liner mode
-GITHUB_USER="james-ridgway"
+GITHUB_USER="jamesridgway"
 GITHUB_REPO="omarchy-openvpn-vpn-toggle"
 GITHUB_BRANCH="main"
 

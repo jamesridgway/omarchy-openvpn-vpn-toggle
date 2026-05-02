@@ -246,7 +246,7 @@ If you're prompted for your sudo password when toggling VPN:
 1. Run the installer again and choose to configure sudoers
 2. Or manually add this line using `sudo visudo`:
    ```
-   %wheel ALL=(ALL) NOPASSWD: /usr/bin/openvpn, /usr/bin/kill, /usr/bin/expect
+   %wheel ALL=(ALL) NOPASSWD: /usr/local/bin/omarchy-ovpn-helper
    ```
 
 ### VPN Icon Not Appearing
@@ -315,29 +315,38 @@ bash -n ~/.config/waybar/scripts/ovpn-toggle/vpn-select.sh
 
 ### Sudoers Configuration
 
-The sudoers configuration allows running `openvpn`, `kill`, and `expect` commands without a password. This is limited to:
-- Only the `/usr/bin/openvpn`, `/usr/bin/kill`, and `/usr/bin/expect` binaries
-- Only for users in the `wheel`/`sudo` group
+The toggle ships a small privileged helper at `/usr/local/bin/omarchy-ovpn-helper` (root-owned, mode 0755) and the optional sudoers entry grants NOPASSWD on **only** that binary:
 
-This is generally safe, but be aware that anyone with access to your user account can control VPN connections and potentially terminate processes without additional authentication.
+```
+%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/omarchy-ovpn-helper
+```
 
-If this is a concern in your environment, you can skip the sudoers setup and enter your password each time you toggle the VPN.
+The helper accepts only `start` and `stop`, validates the calling user via `SUDO_USER`, refuses to follow symlinks for the auth/config files it reads, rejects `VPN_NAME` values that don't match `[A-Za-z0-9._-]+`, and only sends `SIGTERM` to a PID whose `/proc/<pid>/comm` is `openvpn`. This is intentionally narrower than the historical `NOPASSWD: /usr/bin/openvpn, /usr/bin/kill` rule, which was effectively a local root primitive (a malicious `.ovpn` `up` directive runs as root).
+
+If you'd rather not give NOPASSWD even on the helper, skip the sudoers step at install time — you'll be prompted for your password on every toggle.
+
+### Script Hooks Disabled
+
+OpenVPN is invoked with `--script-security 1`, which disables user-defined `up`/`down`/`client-connect`/`tls-verify`/etc. hooks. This prevents a malicious or compromised `.ovpn` file from achieving root execution through a hook. The tradeoff: integrations like `update-systemd-resolved` or `openresolv` won't run automatically. If you need DNS-update hooks, configure them outside this toggle (e.g. via NetworkManager or systemd-resolved system config).
 
 ### Configuration File Security
 
-OpenVPN configuration files (.ovpn) in `/etc/openvpn/client/` and the credentials file (`~/.config/waybar/scripts/ovpn-toggle/vpn.conf`) may contain sensitive information. The scripts handle them securely:
+OpenVPN configuration files (.ovpn) in `/etc/openvpn/client/` and the credentials file (`~/.config/waybar/scripts/ovpn-toggle/vpn.conf`) may contain sensitive information. The scripts handle them as follows:
 
-- Credentials are stored in your user directory with restricted permissions
-- Only your user account can read the vpn.conf file
-- .ovpn files in `/etc/openvpn/client/` should have restricted permissions
+- The `ovpn-toggle/` directory is created at mode `0700` so other local users can't list its contents.
+- `vpn.conf`, the OpenVPN auth file, the saved-credentials cache (`.creds/<profile>.creds`), and `vpn.log` are all written through a `umask 077` so they land at mode `0600` from the moment they exist.
+- `.ovpn` files under `/etc/openvpn/client/` are not managed by this tool — set their permissions yourself.
 
-For additional security, set proper permissions:
+For additional defence in depth on system-wide profiles:
 
 ```bash
 sudo chmod 600 /etc/openvpn/client/*.ovpn
 sudo chown root:root /etc/openvpn/client/*.ovpn
-chmod 600 ~/.config/waybar/scripts/ovpn-toggle/vpn.conf
 ```
+
+### Trust Model for the One-Liner Installer
+
+The `curl … | bash` install path trusts GitHub's TLS (and your CA store) to vouch for the script you're piping into `bash`. There is no separate signature or checksum check. If you'd like a stronger guarantee, clone the repo, inspect the diff, then run `./install.sh` locally.
 
 ## Uninstallation
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eEo pipefail
 
-# WireGuard VPN Toggle Installer for Omarchy's Waybar
+# OpenVPN Toggle Installer for Omarchy's Waybar
 # Based on: https://github.com/basecamp/omarchy/discussions/1366
 # 
 # Can be used as:

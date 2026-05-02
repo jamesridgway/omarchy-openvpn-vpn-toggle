@@ -402,6 +402,11 @@ for script in scripts/*.sh; do bash -n "$script"; done
 
 Based on the manual setup guide by [@rulonder](https://github.com/rulonder) in [Omarchy Discussion #1366](https://github.com/basecamp/omarchy/discussions/1366).
 
+This fork builds on [daniel-mekuria/omarchy-openvpn-vpn-toggle](https://github.com/daniel-mekuria/omarchy-openvpn-vpn-toggle) and incorporates work from two unmerged PRs against it:
+
+- [PR #1](https://github.com/daniel-mekuria/omarchy-openvpn-vpn-toggle/pull/1) by [@pabumake](https://github.com/pabumake) — connection reliability and config-handling fixes (PID validation, safer `vpn.conf` quoting, configurable connect timeout, fast-fail on auth/DNS errors, log file relocated under the user's config dir, deduplicated connect logic).
+- [PR #2](https://github.com/daniel-mekuria/omarchy-openvpn-vpn-toggle/pull/2) by [@cfulton](https://github.com/cfulton) — namespacing the install path (`~/.config/waybar/scripts/ovpn-toggle/`), Waybar module (`custom/ovpn`), and CSS selector (`#custom-ovpn`) so this can coexist with similar WireGuard waybar toggles.
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) file for details.

@@ -89,9 +89,12 @@ need_download() {
 download_repository() {
   print_info "Downloading repository..."
   
-  TEMP_INSTALL_DIR="/tmp/omarchy-openvpn-vpn-toggle-$$"
-  
-  # Try git clone first
+  if ! TEMP_INSTALL_DIR=$(mktemp -d -t omarchy-openvpn-vpn-toggle-XXXXXXXX); then
+    print_error "Failed to create temporary directory"
+    exit 1
+  fi
+
+  # Try git clone first (clones into the existing empty mktemp dir)
   if command -v git &>/dev/null; then
     if git clone --depth 1 --branch "${GITHUB_BRANCH}" \
         "https://github.com/${GITHUB_USER}/${GITHUB_REPO}.git" \
@@ -101,13 +104,11 @@ download_repository() {
       return 0
     fi
   fi
-  
+
   # Fallback to tarball download
   print_info "Downloading repository tarball..."
   local tarball_url="https://github.com/${GITHUB_USER}/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.tar.gz"
-  
-  mkdir -p "${TEMP_INSTALL_DIR}"
-  
+
   if command -v curl &>/dev/null; then
     if curl -fsSL "${tarball_url}" | tar -xz -C "${TEMP_INSTALL_DIR}" --strip-components=1 2>/dev/null; then
       print_success "Repository downloaded via curl"
@@ -325,6 +326,9 @@ create_waybar_directory() {
     mkdir -p "${OVPN_SCRIPTS_DIR}"
     print_success "Created ${OVPN_SCRIPTS_DIR}"
   fi
+  # Tighten perms whether we just created it or it already existed —
+  # this directory holds vpn.conf, the auth file, and OpenVPN logs.
+  chmod 700 "${OVPN_SCRIPTS_DIR}"
 }
 
 verify_repo_scripts() {
@@ -360,21 +364,27 @@ create_vpn_config() {
     if [[ -n "${first_config}" ]]; then
       local vpn_name
       vpn_name=$(basename "${first_config}" .ovpn)
-      {
-        printf 'VPN_NAME=%q\n' "${vpn_name}"
-        printf 'VPN_CONFIG_PATH=%q\n' "${first_config}"
-        printf 'VPN_USER=%q\n' ""
-        printf 'VPN_PASSWORD=%q\n' ""
-      } > "${OVPN_SCRIPTS_DIR}/vpn.conf"
+      (
+        umask 077
+        {
+          printf 'VPN_NAME=%q\n' "${vpn_name}"
+          printf 'VPN_CONFIG_PATH=%q\n' "${first_config}"
+          printf 'VPN_USER=%q\n' ""
+          printf 'VPN_PASSWORD=%q\n' ""
+        } > "${OVPN_SCRIPTS_DIR}/vpn.conf"
+      )
       print_success "Created vpn.conf with default: ${vpn_name}"
       print_warning "You'll need to configure credentials via the selection menu (right-click)"
     else
-      {
-        printf 'VPN_NAME=%q\n' ""
-        printf 'VPN_CONFIG_PATH=%q\n' ""
-        printf 'VPN_USER=%q\n' ""
-        printf 'VPN_PASSWORD=%q\n' ""
-      } > "${OVPN_SCRIPTS_DIR}/vpn.conf"
+      (
+        umask 077
+        {
+          printf 'VPN_NAME=%q\n' ""
+          printf 'VPN_CONFIG_PATH=%q\n' ""
+          printf 'VPN_USER=%q\n' ""
+          printf 'VPN_PASSWORD=%q\n' ""
+        } > "${OVPN_SCRIPTS_DIR}/vpn.conf"
+      )
       print_warning "Created empty vpn.conf. Configure via the selection menu (right-click)"
     fi
   else
@@ -519,7 +529,7 @@ configure_sudoers() {
       print_warning "Defaulting to 'wheel' group. You may need to adjust this."
     fi
 
-    local sudoers_line="%${user_group} ALL=(ALL) NOPASSWD: /usr/bin/openvpn, /usr/bin/kill, /usr/bin/expect"
+    local sudoers_line="%${user_group} ALL=(ALL) NOPASSWD: /usr/bin/openvpn, /usr/bin/kill"
     local temp_sudoers
     temp_sudoers=$(mktemp)
     
@@ -539,7 +549,7 @@ configure_sudoers() {
   else
     print_warning "Skipping sudoers configuration."
     print_info "You'll need to manually add this line to sudoers (using 'sudo visudo'):"
-    echo "  %wheel ALL=(ALL) NOPASSWD: /usr/bin/openvpn, /usr/bin/kill, /usr/bin/expect"
+    echo "  %wheel ALL=(ALL) NOPASSWD: /usr/bin/openvpn, /usr/bin/kill"
     echo ""
     print_warning "Without this, you'll be prompted for your password when toggling VPN."
   fi

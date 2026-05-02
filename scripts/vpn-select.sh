@@ -28,12 +28,15 @@ write_vpn_config() {
   local user=$3
   local pass=$4
 
-  {
-    printf 'VPN_NAME=%q\n' "${vpn_name}"
-    printf 'VPN_CONFIG_PATH=%q\n' "${config_file}"
-    printf 'VPN_USER=%q\n' "${user}"
-    printf 'VPN_PASSWORD=%q\n' "${pass}"
-  } > "${SCRIPT_DIR}/vpn.conf"
+  (
+    umask 077
+    {
+      printf 'VPN_NAME=%q\n' "${vpn_name}"
+      printf 'VPN_CONFIG_PATH=%q\n' "${config_file}"
+      printf 'VPN_USER=%q\n' "${user}"
+      printf 'VPN_PASSWORD=%q\n' "${pass}"
+    } > "${SCRIPT_DIR}/vpn.conf"
+  )
 }
 
 # Find available VPN configurations (.ovpn files)
@@ -101,13 +104,13 @@ select vpn_config in "${configs[@]}"; do
 
     # Save creds if we have them
     if [[ -n "$user" ]]; then
-         mkdir -p "${CREDS_DIR}"
-         # Save safe permissions
-         old_umask=$(umask)
-         umask 077
-         echo "$user" > "${stored_cred_file}"
-         echo "$pass" >> "${stored_cred_file}"
-         umask $old_umask
+      mkdir -p "${CREDS_DIR}"
+      chmod 700 "${CREDS_DIR}"
+      (
+        umask 077
+        echo "$user" > "${stored_cred_file}"
+        echo "$pass" >> "${stored_cred_file}"
+      )
     fi
 
     # Update vpn.conf with escaped values so special characters survive sourcing.

@@ -5,7 +5,10 @@ set -eEo pipefail
 output_status() {
   local status=$1
   local tooltip=$2
-  echo "{\"text\":\"\",\"alt\":\"${status}\",\"class\":\"${status}\",\"tooltip\":\"${tooltip}\"}"
+  jq -nc \
+    --arg s "${status}" \
+    --arg t "${tooltip}" \
+    '{text: "", alt: $s, class: $s, tooltip: $t}'
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

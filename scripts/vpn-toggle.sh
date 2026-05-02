@@ -63,8 +63,7 @@ else
   auth_file=""
   if [[ -n "${VPN_USER}" ]] && [[ -n "${VPN_PASSWORD}" ]]; then
     auth_file="${SCRIPT_DIR}/.vpn_auth_${VPN_NAME}"
-    printf '%s\n%s\n' "${VPN_USER}" "${VPN_PASSWORD}" > "${auth_file}"
-    chmod 600 "${auth_file}"
+    ( umask 077; printf '%s\n%s\n' "${VPN_USER}" "${VPN_PASSWORD}" > "${auth_file}" )
     AUTH_OPTS+=("--auth-user-pass" "${auth_file}")
   else
     echo "No credentials found in vpn.conf."

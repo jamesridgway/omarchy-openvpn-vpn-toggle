@@ -6,6 +6,35 @@ CONFIGS_PATH="${HOME}/.config/openvpn"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${SCRIPT_DIR}/vpn.pid"
 CREDS_DIR="${SCRIPT_DIR}/.creds"
+TOGGLE_SCRIPT="${SCRIPT_DIR}/vpn-toggle.sh"
+
+read_pid() {
+  [[ -f "${PID_FILE}" ]] || return 1
+  local pid
+  pid=$(<"${PID_FILE}")
+  [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
+  echo "${pid}"
+}
+
+is_vpn_running() {
+  local pid
+  pid=$(read_pid) || return 1
+  ps -p "${pid}" > /dev/null 2>&1
+}
+
+write_vpn_config() {
+  local vpn_name=$1
+  local config_file=$2
+  local user=$3
+  local pass=$4
+
+  {
+    printf 'VPN_NAME=%q\n' "${vpn_name}"
+    printf 'VPN_CONFIG_PATH=%q\n' "${config_file}"
+    printf 'VPN_USER=%q\n' "${user}"
+    printf 'VPN_PASSWORD=%q\n' "${pass}"
+  } > "${SCRIPT_DIR}/vpn.conf"
+}
 
 # Find available VPN configurations (.ovpn files)
 mapfile -t configs < <(find "${CONFIGS_PATH}" -maxdepth 1 -name "*.ovpn" 2>/dev/null | sort)
@@ -23,28 +52,30 @@ select vpn_config in "${configs[@]}"; do
     echo "Selection cancelled"
     exit 0
   fi
-  
+
   if [[ -n "${vpn_config}" ]]; then
     vpn_name="$(basename "${vpn_config}" .ovpn)"
     # Get the current VPN name
     if [[ -f "${SCRIPT_DIR}/vpn.conf" ]]; then
-      source "${SCRIPT_DIR}/vpn.conf"
+      if ! source "${SCRIPT_DIR}/vpn.conf" 2>/dev/null; then
+        echo "Warning: Existing vpn.conf is invalid and will be replaced."
+      fi
     fi
-    
+
     config_file="${vpn_config}"
-    
+
     # Check for credentials in comments (format: # VPN_USER=username)
     user=$(sed -n 's/^[#;]\s*VPN_USER=\(.*\)/\1/p' "${config_file}" | head -n 1 | tr -d '\r')
     pass=$(sed -n 's/^[#;]\s*VPN_PASSWORD=\(.*\)/\1/p' "${config_file}" | head -n 1 | tr -d '\r')
-    
+
     # Check stored creds if not found in file
     stored_cred_file="${CREDS_DIR}/${vpn_name}.creds"
     if [[ -z "$user" ]] && [[ -f "${stored_cred_file}" ]]; then
          # Read stored
          mapfile -t stored_creds < "${stored_cred_file}"
          s_user="${stored_creds[0]}"
-         s_pass="${stored_creds[1]}" 
-         
+         s_pass="${stored_creds[1]}"
+
          if [[ -n "$s_user" ]]; then
              echo "Found saved credentials for ${vpn_name} (User: ${s_user})."
              read -p "Use saved credentials? [Y/n]: " use_stored
@@ -67,7 +98,7 @@ select vpn_config in "${configs[@]}"; do
     else
       echo "Using credentials."
     fi
-    
+
     # Save creds if we have them
     if [[ -n "$user" ]]; then
          mkdir -p "${CREDS_DIR}"
@@ -78,63 +109,24 @@ select vpn_config in "${configs[@]}"; do
          echo "$pass" >> "${stored_cred_file}"
          umask $old_umask
     fi
-    
-    # Update vpn.conf with config path and credentials
-    cat > "${SCRIPT_DIR}/vpn.conf" <<EOF
-VPN_NAME="${vpn_name}"
-VPN_CONFIG_PATH="${config_file}"
-VPN_USER="${user}"
-VPN_PASSWORD="${pass}"
-EOF
+
+    # Update vpn.conf with escaped values so special characters survive sourcing.
+    write_vpn_config "${vpn_name}" "${config_file}" "${user}" "${pass}"
     echo "VPN configuration updated to ${vpn_name}"
 
-    # If a VPN is connected, disconnect it
-    if [[ -f "${PID_FILE}" ]] && ps -p $(cat "${PID_FILE}") > /dev/null 2>&1; then
+    # If a VPN is connected, disconnect and reconnect via the toggle script
+    # so connection logic lives in one place.
+    if is_vpn_running; then
+      current_pid=$(read_pid)
       echo "Disconnecting current VPN..."
-      sudo kill $(cat "${PID_FILE}") 2>/dev/null || true
+      sudo kill "${current_pid}" 2>/dev/null || true
       rm -f "${PID_FILE}"
-      # Clean up old auth files
       rm -f "${SCRIPT_DIR}"/.vpn_auth_*
-      
-      # Connect to the new VPN
+
       echo "Connecting to ${vpn_name}..."
-      
-      AUTH_OPTS=()
-      auth_file=""
-      if [[ -n "${user}" ]] && [[ -n "${pass}" ]]; then
-          # Create temporary auth file
-          auth_file="${SCRIPT_DIR}/.vpn_auth_${vpn_name}"
-          echo "${user}" > "${auth_file}"
-          echo "${pass}" >> "${auth_file}"
-          chmod 600 "${auth_file}"
-          AUTH_OPTS+=("--auth-user-pass" "${auth_file}")
-      fi
-      
-      # Sanitize config
-      temp_config="${SCRIPT_DIR}/.vpn_config_sanitized_${vpn_name}.ovpn"
-      # Remove up/down scripts that might be missing, and auth-user-pass lines if we are not providing auth
-      # We rely on CLI args for auth if needed.
-      grep -vE "^\s*(up|down)\s+/etc/openvpn/update-resolv-conf" "${config_file}" | grep -vE "^\s*auth-user-pass" > "${temp_config}"
-      
-      # Start OpenVPN with auth file in daemon mode
-      # Added --auth-retry nointeract to prevent hanging
-      sudo openvpn --config "${temp_config}" "${AUTH_OPTS[@]}" --auth-retry nointeract --daemon
-      
-      # Wait a moment for openvpn to start, then get its PID
-      sleep 1
-      openvpn_pid=$(pgrep -o -f "openvpn.*$(basename "${temp_config}")")
-      if [[ -n "${openvpn_pid}" ]]; then
-        echo "${openvpn_pid}" > "${PID_FILE}"
-        echo "VPN connection initiated"
-        # Cleanup temp config
-        [[ -f "${temp_config}" ]] && rm -f "${temp_config}"
-      else
-        echo "Failed to start VPN"
-        [[ -n "${auth_file}" ]] && rm -f "${auth_file}"
-        [[ -f "${temp_config}" ]] && rm -f "${temp_config}"
-      fi
+      "${TOGGLE_SCRIPT}"
     fi
-    
+
     break
   else
     echo "Invalid selection."

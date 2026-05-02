@@ -1,114 +1,169 @@
 #!/bin/bash
 set -eEo pipefail
 
-# Source VPN configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/vpn.conf"
-
-# PID file to track OpenVPN process
+CONFIG_FILE="${SCRIPT_DIR}/vpn.conf"
 PID_FILE="${SCRIPT_DIR}/vpn.pid"
+LOG_FILE="${SCRIPT_DIR}/vpn.log"
+CONNECT_TIMEOUT_SECONDS="${VPN_CONNECT_TIMEOUT_SECONDS:-30}"
 
-# Check if VPN is running
-if [[ -f "${PID_FILE}" ]] && ps -p $(cat "${PID_FILE}") > /dev/null 2>&1; then
-  # VPN is running, stop it
+read_pid() {
+  [[ -f "${PID_FILE}" ]] || return 1
+  local pid
+  pid=$(<"${PID_FILE}")
+  [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
+  echo "${pid}"
+}
+
+is_vpn_running() {
+  local pid
+  pid=$(read_pid) || return 1
+  ps -p "${pid}" > /dev/null 2>&1
+}
+
+require_config() {
+  if [[ ! -f "${CONFIG_FILE}" ]]; then
+    echo "Error: VPN config missing at ${CONFIG_FILE}."
+    echo "Run vpn-select.sh (right-click in Waybar) to configure a profile."
+    exit 1
+  fi
+
+  # shellcheck disable=SC1090
+  if ! source "${CONFIG_FILE}" 2>/dev/null; then
+    echo "Error: Invalid VPN config format in ${CONFIG_FILE}."
+    echo "Run vpn-select.sh (right-click) to rewrite the config."
+    exit 1
+  fi
+
+  if [[ -z "${VPN_NAME:-}" ]] || [[ -z "${VPN_CONFIG_PATH:-}" ]]; then
+    echo "Error: VPN not configured in ${CONFIG_FILE}."
+    echo "Run vpn-select.sh (right-click in Waybar) to pick a profile."
+    exit 1
+  fi
+}
+
+if is_vpn_running; then
+  pid=$(read_pid)
   echo "Stopping VPN..."
-   sudo kill $(cat "${PID_FILE}")
+  sudo kill "${pid}"
   rm -f "${PID_FILE}"
-  # Clean up auth file
   rm -f "${SCRIPT_DIR}"/.vpn_auth_*
   echo "VPN disconnected"
 else
-  # VPN is not running, start it
+  require_config
+
   config_file="${VPN_CONFIG_PATH}"
-  
-  if !  test -f "${config_file}"; then
+
+  if ! test -f "${config_file}"; then
     echo "Error: Config file not found: ${config_file}"
     exit 1
   fi
-  
-  # Check if credentials are present
+
   AUTH_OPTS=()
   auth_file=""
   if [[ -n "${VPN_USER}" ]] && [[ -n "${VPN_PASSWORD}" ]]; then
-      # Create temporary auth file
-      auth_file="${SCRIPT_DIR}/.vpn_auth_${VPN_NAME}"
-      echo "${VPN_USER}" > "${auth_file}"
-      echo "${VPN_PASSWORD}" >> "${auth_file}"
-      chmod 600 "${auth_file}"
-      AUTH_OPTS+=("--auth-user-pass" "${auth_file}")
+    auth_file="${SCRIPT_DIR}/.vpn_auth_${VPN_NAME}"
+    printf '%s\n%s\n' "${VPN_USER}" "${VPN_PASSWORD}" > "${auth_file}"
+    chmod 600 "${auth_file}"
+    AUTH_OPTS+=("--auth-user-pass" "${auth_file}")
   else
-      echo "No credentials found, attempting specific connection without auth..."
+    echo "No credentials found in vpn.conf."
   fi
-  
+
   echo "Starting VPN..."
-  
-  # Log file for troubleshooting
-  LOG_FILE="/tmp/vpn-toggle.log"
 
-  # Create a temporary sanitized config to avoid issues with missing scripts (like update-resolv-conf)
-  # process substitution doesn't work well with sudo openvpn sometimes, so using a temp file
   temp_config="${SCRIPT_DIR}/.vpn_config_sanitized_${VPN_NAME}.ovpn"
-  # Remove up/down scripts that might be missing, and reference to auth-user-pass in config (we handle it via CLI)
-  # We use || true to prevent script exit if grep returns non-zero (though unlikely for -v)
-  grep -vE "^\s*(up|down)\s+/etc/openvpn/update-resolv-conf" "${config_file}" | grep -vE "^\s*auth-user-pass" > "${temp_config}" || true
 
-  # Start OpenVPN with auth file
-  # Use --writepid to reliably store the PID
-  # Use --auth-retry nointeract to prevent hanging if auth fails/missing
+  if [[ ${#AUTH_OPTS[@]} -gt 0 ]]; then
+    sed -E \
+      '/^[[:space:]]*(up|down)[[:space:]]+\/etc\/openvpn\/update-resolv-conf/d; /^[[:space:]]*auth-user-pass([[:space:]]+.*)?$/d' \
+      "${config_file}" > "${temp_config}"
+  else
+    sed -E \
+      '/^[[:space:]]*(up|down)[[:space:]]+\/etc\/openvpn\/update-resolv-conf/d' \
+      "${config_file}" > "${temp_config}"
+
+    if grep -Eq '^[[:space:]]*auth-user-pass[[:space:]]*$' "${config_file}"; then
+      echo "Error: This profile requires username/password input."
+      echo "Run vpn-select.sh (right-click) and save credentials first."
+      rm -f "${temp_config}"
+      exit 1
+    fi
+  fi
+
+  rm -f "${LOG_FILE}" 2>/dev/null || true
+  if ! : > "${LOG_FILE}"; then
+    echo "Error: Cannot write VPN log file at ${LOG_FILE}"
+    rm -f "${temp_config}"
+    exit 1
+  fi
+  chmod 600 "${LOG_FILE}"
+
   if ! sudo openvpn --config "${temp_config}" \
       "${AUTH_OPTS[@]}" \
       --auth-retry nointeract \
       --daemon \
       --writepid "${PID_FILE}" \
       --log "${LOG_FILE}"; then
-      echo "Error: Failed to start OpenVPN process."
-      echo "Check permissions or config validity."
-      exit 1
+    echo "Error: Failed to start OpenVPN process."
+    echo "Check permissions or config validity."
+    rm -f "${temp_config}"
+    exit 1
   fi
-  
-  # Wait a moment for openvpn to initialize
-  sleep 2
-  
-  # Check if the process is actually running and connected
+
+  sleep 1
+  if ! is_vpn_running; then
+    echo "Failed to start VPN process."
+    [[ -f "${LOG_FILE}" ]] && tail -n 10 "${LOG_FILE}"
+    rm -f "${temp_config}"
+    rm -f "${PID_FILE}"
+    exit 1
+  fi
+
   count=0
-  connected=false
-  while [[ $count -lt 10 ]]; do
+  while [[ ${count} -lt ${CONNECT_TIMEOUT_SECONDS} ]]; do
     if grep -q "Initialization Sequence Completed" "${LOG_FILE}"; then
-        connected=true
-        break
+      echo "VPN connection successful"
+      tail -n 1 "${LOG_FILE}"
+      rm -f "${temp_config}"
+      exit 0
     fi
-    # Check if process died
-    if ! [[ -f "${PID_FILE}" ]] || ! ps -p $(cat "${PID_FILE}") > /dev/null 2>&1; then
+
+    if ! is_vpn_running; then
       break
     fi
+
+    if grep -Eq "AUTH_FAILED|Options error|Exiting due to fatal error|Cannot resolve host address" "${LOG_FILE}"; then
+      break
+    fi
+
     sleep 1
     count=$((count+1))
   done
-  
-  if [[ "$connected" = true ]]; then
-    echo "VPN connection successful"
-    # Show status for Waybar (optional, but good for debugging)
-    tail -n 1 "${LOG_FILE}"
-    # Cleanup temp config (assuming openvpn has loaded it)
-    [[ -f "${temp_config}" ]] && rm -f "${temp_config}"
-  else
-    echo "Failed to connect to VPN (Timeout or Error). Logic check:"
-    echo "Check ${LOG_FILE} for details:"
-    if [[ -f "${LOG_FILE}" ]]; then
-        # Show the last few lines of errors
-        tail -n 10 "${LOG_FILE}"
-    fi
-    
-    # Cleanup: Kill the process if it's still hanging
-    if [[ -f "${PID_FILE}" ]]; then
-        pid=$(cat "${PID_FILE}")
-        if [[ -n "$pid" ]]; then
-             sudo kill "$pid" 2>/dev/null || true
-        fi
-        sudo rm -f "${PID_FILE}"
-    fi
-    [[ -n "${auth_file}" ]] && rm -f "${auth_file}"
-    [[ -f "${temp_config}" ]] && rm -f "${temp_config}"
-    exit 1
+
+  if is_vpn_running; then
+    echo "VPN process is running and still initializing."
+    echo "Check ${LOG_FILE} for progress."
+    rm -f "${temp_config}"
+    exit 0
   fi
+
+  echo "Failed to connect to VPN."
+  echo "Check ${LOG_FILE} for details:"
+  if [[ -f "${LOG_FILE}" ]]; then
+    tail -n 10 "${LOG_FILE}"
+  fi
+
+  if [[ -f "${PID_FILE}" ]]; then
+    pid=$(read_pid || true)
+    if [[ -n "${pid:-}" ]]; then
+      sudo kill "${pid}" 2>/dev/null || true
+    fi
+    rm -f "${PID_FILE}"
+  fi
+  rm -f "${temp_config}"
+  if [[ -n "${auth_file}" ]]; then
+    rm -f "${auth_file}"
+  fi
+  exit 1
 fi

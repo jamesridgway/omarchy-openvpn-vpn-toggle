@@ -1,4 +1,6 @@
-# OpenVPN Toggle for Omarchy's Waybar based on the wireguard toggle from https://github.com/JacobusXIII/omarchy-wireguard-vpn-toggle
+# OpenVPN Toggle for Omarchy's Waybar
+
+Based on the WireGuard toggle from [JacobusXIII/omarchy-wireguard-vpn-toggle](https://github.com/JacobusXIII/omarchy-wireguard-vpn-toggle).
 
 A clean, automated installer for adding an OpenVPN toggle to Omarchy's Waybar status bar. Provides a convenient visual indicator and quick toggle for your OpenVPN connections.
 
@@ -42,19 +44,18 @@ Install directly from GitHub with a single command:
 
 **Using curl:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JacobusXIII/omarchy-wireguard-vpn-toggle/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/james-ridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
 ```
 
 **Using wget:**
 ```bash
-wget -qO- https://raw.githubusercontent.com/JacobusXIII/omarchy-wireguard-vpn-toggle/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/james-ridgway/omarchy-openvpn-vpn-toggle/main/install.sh | bash
 ```
 
 This will:
 - Automatically detect one-liner mode
 - Run the full installation with interactive prompts
-- Clean up temporary files when done
-- Ask for sudoers configuration (optional passwordless toggling)eractive prompts
+- Ask for sudoers configuration (optional passwordless toggling)
 - Clean up temporary files when done
 
 **Note:** You'll need OpenVPN configuration files (.ovpn) and credentials before the VPN toggle will work (see step 2 below).
@@ -66,8 +67,8 @@ This will:
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/JacobusXIII/omarchy-wireguard-vpn-toggle.git
-cd omarchy-wireguard-vpn-toggle
+git clone https://github.com/james-ridgway/omarchy-openvpn-vpn-toggle.git
+cd omarchy-openvpn-vpn-toggle
 ```
 
 #### 2. Set Up OpenVPN Configuration
@@ -109,11 +110,11 @@ Most VPN providers offer OpenVPN configuration files. Download the .ovpn files a
 The installer will:
 - ✅ Check for required dependencies
 - ✅ Verify OpenVPN configurations exist
-- ✅ Install scripts to `~/.config/waybar/scripts/`
-- ✅ Add `custom/vpn` module to Omarchy's Waybar config (after network module)
-- ✅ Add `#custom-vpn` to style.css alongside `#custom-omarchy`
-- ✅ Optionally configure sudoers for passwordless operationnetwork module)
-- ✅ Add `#custom-vpn` to style.css alongside `#custom-omarchy`
+- ✅ Install scripts to `~/.config/waybar/scripts/ovpn-toggle/`
+- ✅ Add `custom/ovpn` module to Omarchy's Waybar config (after network module)
+- ✅ Add `#custom-ovpn` to style.css alongside `#custom-omarchy`
+- ✅ Optionally configure sudoers for passwordless operation
+
 #### 4. Restart Waybar
 
 ```bash
@@ -138,7 +139,7 @@ All VPN connections require a username and password. The script automatically ha
 
 **Setting up credentials:**
 
-When you select a VPN (via right-click menu), you'll be prompted to enter your username and password. These are securely stored in `~/.config/waybar/scripts/vpn.conf` and automatically provided to OpenVPN when connecting.
+When you select a VPN (via right-click menu), you'll be prompted to enter your username and password. These are securely stored in `~/.config/waybar/scripts/ovpn-toggle/vpn.conf` and automatically provided to OpenVPN when connecting.
 
 **Option: Config Comments**
 You can also add your credentials directly to your `.ovpn` file as comments, and the script will pick them up automatically:
@@ -159,24 +160,24 @@ You can also use the scripts directly from the command line:
 
 ```bash
 # Toggle VPN on/off
-~/.config/waybar/scripts/vpn-toggle.sh
+~/.config/waybar/scripts/ovpn-toggle/vpn-toggle.sh
 
 # Check current status
-~/.config/waybar/scripts/vpn-status.sh
+~/.config/waybar/scripts/ovpn-toggle/vpn-status.sh
 
 # Select VPN profile
-~/.config/waybar/scripts/vpn-select.sh
+~/.config/waybar/scripts/ovpn-toggle/vpn-select.sh
 ```
 
 ## Customization
 
 ### Styling
 
-The installer automatically adds `#custom-vpn` to your `style.css` alongside other icons:
+The installer automatically adds `#custom-ovpn` to your `style.css` alongside other icons:
 
 ```css
 #custom-omarchy,
-#custom-vpn {
+#custom-ovpn {
   /* Your existing Omarchy icon styles */
 }
 ```
@@ -186,7 +187,7 @@ By default, the VPN icon inherits the same styling as your other custom modules 
 - **Keeping it grouped** with other icons to inherit their styles
 - **Separating it** to apply custom styles only to the VPN icon:
   ```css
-  #custom-vpn {
+  #custom-ovpn {
     color: #your-color;
     /* Your custom styles */
   }
@@ -210,7 +211,7 @@ Replace the Nerd Font icons with your preferred icons or emoji.
 ## Project Structure
 
 ```
-omarchy-wireguard-vpn-toggle/
+omarchy-openvpn-vpn-toggle/
 ├── scripts/              # VPN toggle scripts
 │   ├── vpn-status.sh    # Checks VPN connection status
 │   ├── vpn-toggle.sh    # Toggles VPN on/off
@@ -225,18 +226,17 @@ omarchy-wireguard-vpn-toggle/
 
 The installer creates/modifies these files:
 
-**In `~/.config/waybar/scripts/`:**
+**In `~/.config/waybar/scripts/ovpn-toggle/`:**
 - `vpn-status.sh` - Checks VPN connection status (returns JSON with icon state)
 - `vpn-toggle.sh` - Toggles VPN on/off
 - `vpn-select.sh` - Interactive VPN profile selector
 - `vpn.conf` - Stores currently selected VPN configuration
 
 **In `~/.config/waybar/`:**
-- `config.jsonc` or `config` - Waybar config (adds custom/vpn module with format-icons)
-- `style.css` - Waybar styles (adds #custom-vpn alongside #custom-omarchy)
+- `config.jsonc` or `config` - Waybar config (adds custom/ovpn module with format-icons)
+- `style.css` - Waybar styles (adds #custom-ovpn alongside #custom-omarchy)
 - `*.backup.YYYYMMDD-HHMMSS` - Timestamped backups of modified files
 
-## Troubleshooting
 ## Troubleshooting
 
 ### Password Prompt When Toggling
@@ -250,14 +250,15 @@ If you're prompted for your sudo password when toggling VPN:
    ```
 
 ### VPN Icon Not Appearing
-### VPN Icon Not Appearings valid JSON:**
+
+1. **Check Waybar config is valid JSON:**
    ```bash
    cat ~/.config/waybar/config.jsonc | jq
    ```
 
 2. **Ensure scripts are executable:**
    ```bash
-   chmod +x ~/.config/waybar/scripts/vpn-*.sh
+   chmod +x ~/.config/waybar/scripts/ovpn-toggle/vpn-*.sh
    ```
 
 3. **Check Waybar logs:**
@@ -267,7 +268,7 @@ If you're prompted for your sudo password when toggling VPN:
 
 4. **Verify scripts exist:**
    ```bash
-   ls -lh ~/.config/waybar/scripts/vpn-*.sh
+   ls -lh ~/.config/waybar/scripts/ovpn-toggle/vpn-*.sh
    ```
 
 ### "No OpenVPN configurations found"
@@ -305,9 +306,9 @@ You'll be prompted for username and password. Check for errors in the output. Pr
 All scripts follow strict bash practices. If you modify them, validate syntax:
 
 ```bash
-bash -n ~/.config/waybar/scripts/vpn-status.sh
-bash -n ~/.config/waybar/scripts/vpn-toggle.sh
-bash -n ~/.config/waybar/scripts/vpn-select.sh
+bash -n ~/.config/waybar/scripts/ovpn-toggle/vpn-status.sh
+bash -n ~/.config/waybar/scripts/ovpn-toggle/vpn-toggle.sh
+bash -n ~/.config/waybar/scripts/ovpn-toggle/vpn-select.sh
 ```
 
 ## Security Considerations
@@ -324,7 +325,7 @@ If this is a concern in your environment, you can skip the sudoers setup and ent
 
 ### Configuration File Security
 
-OpenVPN configuration files (.ovpn) in `/etc/openvpn/client/` and the credentials file (`~/.config/waybar/scripts/vpn.conf`) may contain sensitive information. The scripts handle them securely:
+OpenVPN configuration files (.ovpn) in `/etc/openvpn/client/` and the credentials file (`~/.config/waybar/scripts/ovpn-toggle/vpn.conf`) may contain sensitive information. The scripts handle them securely:
 
 - Credentials are stored in your user directory with restricted permissions
 - Only your user account can read the vpn.conf file
@@ -335,7 +336,7 @@ For additional security, set proper permissions:
 ```bash
 sudo chmod 600 /etc/openvpn/client/*.ovpn
 sudo chown root:root /etc/openvpn/client/*.ovpn
-chmod 600 ~/.config/waybar/scripts/vpn.conf
+chmod 600 ~/.config/waybar/scripts/ovpn-toggle/vpn.conf
 ```
 
 ## Uninstallation
@@ -350,16 +351,16 @@ Or manually:
 
 1. **Remove the scripts:**
    ```bash
-   rm -rf ~/.config/waybar/scripts
+   rm -rf ~/.config/waybar/scripts/ovpn-toggle
    ```
 
 2. **Remove from Waybar config:**
-   - Delete `"custom/vpn"` from `modules-right` array
-   - Delete the `"custom/vpn"` configuration block
+   - Delete `"custom/ovpn"` from `modules-right` array
+   - Delete the `"custom/ovpn"` configuration block
    - (Or restore from timestamped backup: `~/.config/waybar/config.jsonc.backup.YYYYMMDD-HHMMSS`)
 
 3. **Remove from `~/.config/waybar/style.css`:**
-   - Remove `#custom-vpn,` from the line with `#custom-omarchy`
+   - Remove `#custom-ovpn,` from the line with `#custom-omarchy`
    - (Or restore from timestamped backup: `~/.config/waybar/style.css.backup.YYYYMMDD-HHMMSS`)
 
 4. **Remove sudoers rule:**
@@ -400,8 +401,6 @@ for script in scripts/*.sh; do bash -n "$script"; done
 ## Credits
 
 Based on the manual setup guide by [@rulonder](https://github.com/rulonder) in [Omarchy Discussion #1366](https://github.com/basecamp/omarchy/discussions/1366).
-
-This project was built with a little help from [Cursor AI](https://cursor.com) - a great way to enforce Omarchy bash practices, maintain code consistency, and write comprehensive documentation. 🤖
 
 ## License
 

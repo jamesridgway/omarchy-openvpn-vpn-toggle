@@ -101,6 +101,7 @@ else
   if ! sudo openvpn --config "${temp_config}" \
       "${AUTH_OPTS[@]}" \
       --auth-retry nointeract \
+      --script-security 1 \
       --daemon \
       --writepid "${PID_FILE}" \
       --log "${LOG_FILE}"; then
